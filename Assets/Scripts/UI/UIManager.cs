@@ -1,11 +1,13 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
+using ShooterGame.Core;
 
 namespace ShooterGame.UI
 {
     /// <summary>
-    /// 全域極簡邊緣化 UI 管理器：全面採用 TextMeshPro (TMP) 渲染高解析度極致銳利文字
+    /// 全域極簡邊緣化 UI 管理器：血條漸層變化、Warning動態閃爍、結算數據與暫停重開按鈕
     /// </summary>
     public class UIManager : MonoBehaviour
     {
@@ -18,6 +20,7 @@ namespace ShooterGame.UI
         [Header("=== 2. Top-Center Zone (Boss 血條) ===")]
         [SerializeField] private RectTransform topCenterContainer;
         [SerializeField] private Slider bossHealthSlider;
+        [SerializeField] private Image bossHealthFillImage;
 
         [Header("=== 3. Top-Right Zone (得分 / 暫停按鈕) ===")]
         [SerializeField] private RectTransform topRightContainer;
@@ -39,6 +42,21 @@ namespace ShooterGame.UI
         [SerializeField] private GameObject gameOverPanel;
         [SerializeField] private GameObject victoryPanel;
 
+        [Header("Overlay Summary Texts & Buttons")]
+        [SerializeField] private TextMeshProUGUI gameOverScoreText;
+        [SerializeField] private TextMeshProUGUI gameOverKillsText;
+        [SerializeField] private TextMeshProUGUI victoryScoreText;
+        [SerializeField] private TextMeshProUGUI victoryKillsText;
+
+        private Coroutine warningCoroutine;
+
+        public Image BossHealthFillImage => bossHealthFillImage;
+        public Slider BossHealthSlider => bossHealthSlider;
+        public GameObject PausePanel => pausePanel;
+        public GameObject GameOverPanel => gameOverPanel;
+        public GameObject VictoryPanel => victoryPanel;
+        public TextMeshProUGUI WarningBanner => warningBanner;
+
         private void Awake()
         {
             if (Instance != null && Instance != this)
@@ -49,6 +67,26 @@ namespace ShooterGame.UI
             Instance = this;
         }
 
+        private void Start()
+        {
+            if (topCenterContainer != null) topCenterContainer.gameObject.SetActive(false);
+            if (centerContainer != null) centerContainer.gameObject.SetActive(false);
+            if (pausePanel != null) pausePanel.SetActive(false);
+            if (gameOverPanel != null) gameOverPanel.SetActive(false);
+            if (victoryPanel != null) victoryPanel.SetActive(false);
+
+            if (pauseButton != null)
+            {
+                pauseButton.onClick.AddListener(() =>
+                {
+                    if (GameManager.Instance != null)
+                    {
+                        GameManager.Instance.TogglePause();
+                    }
+                });
+            }
+        }
+
         public void SetHP(int currentHp, int maxHp)
         {
             if (hpText != null)
@@ -57,9 +95,6 @@ namespace ShooterGame.UI
             }
         }
 
-        /// <summary>
-        /// 更新分數：自然數值遞增顯示
-        /// </summary>
         public void SetScore(int score)
         {
             if (scoreText != null)
@@ -70,14 +105,31 @@ namespace ShooterGame.UI
 
         public void SetHighScore(int highScore)
         {
-            // 配合使用者需求僅保留 Score，此處保留空實作確保系統相容性
         }
 
         public void SetBossHealth(float ratio)
         {
+            float clampedRatio = Mathf.Clamp01(ratio);
             if (bossHealthSlider != null)
             {
-                bossHealthSlider.value = Mathf.Clamp01(ratio);
+                bossHealthSlider.value = clampedRatio;
+            }
+
+            // 綠 -> 黃 -> 紅 多階段血條動態顏色變化
+            if (bossHealthFillImage != null)
+            {
+                if (clampedRatio > 0.6f)
+                {
+                    bossHealthFillImage.color = new Color(0.2f, 1f, 0.4f, 1f); // 綠
+                }
+                else if (clampedRatio > 0.3f)
+                {
+                    bossHealthFillImage.color = new Color(1f, 0.85f, 0.2f, 1f); // 黃
+                }
+                else
+                {
+                    bossHealthFillImage.color = new Color(1f, 0.25f, 0.25f, 1f); // 紅
+                }
             }
         }
 
@@ -91,9 +143,37 @@ namespace ShooterGame.UI
 
         public void ShowWarning(bool show)
         {
-            if (warningBanner != null)
+            if (centerContainer != null)
             {
-                warningBanner.gameObject.SetActive(show);
+                centerContainer.gameObject.SetActive(show);
+            }
+
+            if (show)
+            {
+                if (warningCoroutine != null) StopCoroutine(warningCoroutine);
+                warningCoroutine = StartCoroutine(WarningFlashRoutine());
+            }
+            else
+            {
+                if (warningCoroutine != null)
+                {
+                    StopCoroutine(warningCoroutine);
+                    warningCoroutine = null;
+                }
+            }
+        }
+
+        private IEnumerator WarningFlashRoutine()
+        {
+            if (warningBanner == null) yield break;
+
+            warningBanner.text = "WARNING!\nBOSS APPROACHING";
+            while (true)
+            {
+                warningBanner.color = new Color(1f, 0.2f, 0.2f, 1f);
+                yield return new WaitForSeconds(0.25f);
+                warningBanner.color = new Color(1f, 0.9f, 0.2f, 1f);
+                yield return new WaitForSeconds(0.25f);
             }
         }
 
@@ -134,6 +214,31 @@ namespace ShooterGame.UI
             if (victoryPanel != null)
             {
                 victoryPanel.SetActive(show);
+            }
+        }
+
+        public void SetSummaryData(int score, int kills)
+        {
+            if (gameOverScoreText != null) gameOverScoreText.text = $"SCORE: {score}";
+            if (gameOverKillsText != null) gameOverKillsText.text = $"KILLS: {kills}";
+            if (victoryScoreText != null) victoryScoreText.text = $"FINAL SCORE: {score}";
+            if (victoryKillsText != null) victoryKillsText.text = $"TOTAL KILLS: {kills}";
+        }
+
+        // 按鈕回調呼叫
+        public void OnResumeClicked()
+        {
+            if (GameManager.Instance != null)
+            {
+                GameManager.Instance.TogglePause();
+            }
+        }
+
+        public void OnRestartClicked()
+        {
+            if (GameManager.Instance != null)
+            {
+                GameManager.Instance.RestartGame();
             }
         }
     }
