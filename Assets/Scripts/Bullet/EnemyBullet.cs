@@ -58,10 +58,25 @@ namespace ShooterGame.Bullet
             if (collision.gameObject.layer == GameLayers.Player || collision.CompareTag("Player"))
             {
                 var player = PlayerController.Instance ?? collision.GetComponentInParent<PlayerController>();
-                if (player != null && !player.IsInvulnerable)
+                if (player != null)
                 {
-                    player.TakeDamage(damage);
-                    Recycle();
+                    if (player.IsShieldActive)
+                    {
+                        // 護盾存在：由護盾完全吸收並銷毀子彈，機身完全不扣血且無受傷反應
+                        player.TakeDamage(damage);
+                        Recycle();
+                    }
+                    else if (!player.IsInvulnerable)
+                    {
+                        // 無護盾且非無敵狀態：機體承受傷害
+                        player.TakeDamage(damage);
+                        Recycle();
+                    }
+                    else
+                    {
+                        // 機體無敵期間：子彈依然吸收回收，防止子彈穿透卡住
+                        Recycle();
+                    }
                 }
             }
         }

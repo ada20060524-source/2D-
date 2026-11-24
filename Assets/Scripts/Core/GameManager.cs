@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 using ShooterGame.UI;
 using ShooterGame.Player;
@@ -18,6 +19,9 @@ namespace ShooterGame.Core
         [Header("State Machine")]
         [SerializeField] private GameState currentState = GameState.Playing;
 
+        [Header("Victory Cutscene Settings")]
+        [SerializeField] private GameObject dockingStationPrefab;
+
         [Header("Game Statistics")]
         [SerializeField] private int currentScore = 0;
         [SerializeField] private int highScore = 0;
@@ -27,6 +31,7 @@ namespace ShooterGame.Core
         public int Score => currentScore;
         public int HighScore => highScore;
         public int Kills => totalKills;
+        public GameObject DockingStationPrefab => dockingStationPrefab;
 
         private void Awake()
         {
@@ -155,11 +160,153 @@ namespace ShooterGame.Core
         }
 
         /// <summary>
+        /// Boss 擊破後觸發自動返航停靠母艦過場動畫，完成後顯示勝利結算
+        /// </summary>
+        public void StartVictorySequence()
+        {
+            if (currentState == GameState.Victory || currentState == GameState.GameOver) return;
+            StartCoroutine(VictoryCutsceneRoutine());
+        }
+
+        private System.Collections.IEnumerator VictoryCutsceneRoutine()
+        {
+            // 1. 清場：回收所有敵彈並清理剩餘小怪
+            if (EnemyBulletPool.Instance != null)
+            {
+                EnemyBulletPool.Instance.ClearAllBullets();
+            }
+
+            var enemies = Object.FindObjectsByType<EnemyController>();
+            foreach (var enemy in enemies)
+            {
+                if (enemy != null && enemy.Type != EnemyType.Boss)
+                {
+                    Destroy(enemy.gameObject);
+                }
+            }
+
+            // 2. 鎖定玩家操作，進入自動返航停靠模式
+            var player = PlayerController.Instance ?? Object.FindAnyObjectByType<PlayerController>();
+            if (player != null)
+            {
+                player.LockControlsForDocking();
+            }
+
+            // 等待 Boss 爆炸火花消散（0.8 秒）
+            yield return new WaitForSeconds(0.8f);
+
+            // 3. 生成休息停靠站（Cruiser 1）自頂部外側進場
+            GameObject stationObj = null;
+            if (dockingStationPrefab != null)
+            {
+                stationObj = Instantiate(dockingStationPrefab, new Vector3(0f, 9.5f, 0f), Quaternion.identity);
+            }
+            else
+            {
+                stationObj = new GameObject("DockingStation");
+                stationObj.transform.position = new Vector3(0f, 9.5f, 0f);
+                var sr = stationObj.AddComponent<SpriteRenderer>();
+                sr.sortingOrder = 3;
+            }
+
+            stationObj.transform.localScale = new Vector3(1.1f, 1.1f, 1f);
+
+            // 4. 停靠站平滑飛入螢幕上方中央 (y: 9.5 -> 3.2)
+            float stationFlyDuration = 2.0f;
+            float elapsed = 0f;
+            Vector3 stationStart = new Vector3(0f, 9.5f, 0f);
+            Vector3 stationTarget = new Vector3(0f, 3.2f, 0f);
+
+            while (elapsed < stationFlyDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.SmoothStep(0f, 1f, elapsed / stationFlyDuration);
+                if (stationObj != null)
+                {
+                    stationObj.transform.position = Vector3.Lerp(stationStart, stationTarget, t);
+                }
+                yield return null;
+            }
+            if (stationObj != null) stationObj.transform.position = stationTarget;
+
+            yield return new WaitForSeconds(0.3f);
+
+            // 5. 玩家戰鬥機自動飛入停靠站（Carrier 1 右側甲板跑道）
+            if (player != null)
+            {
+                var stationScript = stationObj != null ? stationObj.GetComponent<DockingStation>() : null;
+                Vector3 playerStartPos = player.transform.position;
+                Vector3 playerTargetPos = stationScript != null ? stationScript.DockingWorldPosition : (stationTarget + new Vector3(0.2f, 0.35f, 0f));
+                Vector3 origScale = player.transform.localScale;
+                var playerSR = player.GetComponent<SpriteRenderer>();
+
+                float dockDuration = 1.6f;
+                elapsed = 0f;
+
+                while (elapsed < dockDuration)
+                {
+                    elapsed += Time.deltaTime;
+                    float t = Mathf.SmoothStep(0f, 1f, elapsed / dockDuration);
+
+                    // 飛入機庫
+                    player.transform.position = Vector3.Lerp(playerStartPos, playerTargetPos, t);
+
+                    // 逐漸縮小並淡出入庫
+                    float scaleRatio = Mathf.Lerp(1f, 0.15f, t);
+                    player.transform.localScale = origScale * scaleRatio;
+
+                    if (playerSR != null)
+                    {
+                        Color c = playerSR.color;
+                        c.a = Mathf.Lerp(1f, 0f, t * t);
+                        playerSR.color = c;
+                    }
+
+                    yield return null;
+                }
+
+                if (playerSR != null) playerSR.enabled = false;
+            }
+
+            // 6. 停靠完成：母艦推進發動，前進加速脫離
+            yield return new WaitForSeconds(0.4f);
+
+            elapsed = 0f;
+            float departDuration = 1.0f;
+            Vector3 departStart = stationObj.transform.position;
+            Vector3 departTarget = departStart + Vector3.up * 1.5f;
+
+            while (elapsed < departDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.SmoothStep(0f, 1f, elapsed / departDuration);
+                if (stationObj != null)
+                {
+                    stationObj.transform.position = Vector3.Lerp(departStart, departTarget, t);
+                }
+                yield return null;
+            }
+
+            yield return new WaitForSeconds(0.4f);
+
+            // 7. 彈出遊戲過關畫面
+            TriggerVictory();
+        }
+
+        /// <summary>
         /// 完整重置遊戲：清空物件池、重置時間軸、重置玩家血量與分數
         /// </summary>
         public void RestartGame()
         {
+            StopAllCoroutines();
             Time.timeScale = 1f;
+
+            // 清理場上停靠站
+            var stations = Object.FindObjectsByType<DockingStation>();
+            foreach (var s in stations)
+            {
+                if (s != null) Destroy(s.gameObject);
+            }
 
             // 1. 清空所有子彈池
             if (BulletPool.Instance != null)

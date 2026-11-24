@@ -4,17 +4,29 @@ using ShooterGame.Player;
 
 namespace ShooterGame.Item
 {
+    public enum DropItemType
+    {
+        PowerUp, // P: 火力強化
+        Bomb,    // B: 保命炸彈 +1
+        Shield   // H: 能量護盾 (持續 20s 或抵擋 3 次子彈)
+    }
+
     /// <summary>
-    /// 武器升級 Power-Up 道具：緩慢飄落、正弦擺盪、玩家拾取後升級火力
+    /// 掉落物道具：支援 P 火力強化、B 保命炸彈與 H 能量護盾
     /// </summary>
     [RequireComponent(typeof(Collider2D))]
     public class PowerUpItem : MonoBehaviour
     {
+        [Header("Item Type")]
+        [SerializeField] private DropItemType itemType = DropItemType.PowerUp;
+
         [Header("Movement Settings")]
         [SerializeField] private float fallSpeed = 1.8f;
         [SerializeField] private float wobbleFrequency = 3f;
         [SerializeField] private float wobbleAmplitude = 0.5f;
         [SerializeField] private int scoreValue = 200;
+
+        public DropItemType ItemType => itemType;
 
         private float spawnTime = 0f;
         private float initialX = 0f;
@@ -54,7 +66,21 @@ namespace ShooterGame.Item
                 var player = PlayerController.Instance ?? collision.GetComponentInParent<PlayerController>();
                 if (player != null)
                 {
-                    player.UpgradeWeapon();
+                    switch (itemType)
+                    {
+                        case DropItemType.PowerUp:
+                            player.UpgradeWeapon();
+                            scoreValue = 200;
+                            break;
+                        case DropItemType.Bomb:
+                            player.CollectBomb();
+                            scoreValue = 300;
+                            break;
+                        case DropItemType.Shield:
+                            player.ActivateShield(20f, 3);
+                            scoreValue = 300;
+                            break;
+                    }
                 }
 
                 var gm = GameManager.Instance ?? Object.FindAnyObjectByType<GameManager>();

@@ -19,6 +19,11 @@ namespace ShooterGame.Wave
         [SerializeField] private GameObject elitePrefab;
         [SerializeField] private GameObject bossPrefab;
 
+        [Header("Obstacle Prefabs (隕石障礙物)")]
+        [SerializeField] private GameObject[] asteroidPrefabs;
+        [SerializeField] private float asteroidSpawnInterval = 6.0f;
+        private float asteroidSpawnTimer = 3.0f;
+
         [Header("Timeline Settings")]
         [SerializeField] private float timeline = 0f;
         [SerializeField] private bool autoAdvance = true;
@@ -64,6 +69,16 @@ namespace ShooterGame.Wave
 
         public void ProcessTimeline()
         {
+            // 隕石障礙物週期性生成（貫穿全場，為戰鬥提供天然掩體與得分機會）
+            asteroidSpawnTimer -= Time.deltaTime;
+            if (asteroidSpawnTimer <= 0f)
+            {
+                SpawnAsteroid();
+                if (timeline < 60f) asteroidSpawnTimer = asteroidSpawnInterval;
+                else if (timeline < 90f) asteroidSpawnTimer = Mathf.Max(4.5f, asteroidSpawnInterval - 1.2f);
+                else asteroidSpawnTimer = 8.5f;
+            }
+
             // 階段 1：0 – 30 秒（前期雜兵試探波次）
             if (timeline < 30f)
             {
@@ -157,6 +172,34 @@ namespace ShooterGame.Wave
             Instantiate(minionPrefab, new Vector3(centerX + 1.2f, startY + 0.8f, 0f), Quaternion.Euler(0, 0, 180));
         }
 
+        private void SpawnAsteroid()
+        {
+            if (ViewportManager.Instance == null) return;
+
+            GameObject prefabToSpawn = null;
+            if (asteroidPrefabs != null && asteroidPrefabs.Length > 0)
+            {
+                List<GameObject> validPrefabs = new List<GameObject>();
+                foreach (var p in asteroidPrefabs)
+                {
+                    if (p != null) validPrefabs.Add(p);
+                }
+                if (validPrefabs.Count > 0)
+                {
+                    prefabToSpawn = validPrefabs[Random.Range(0, validPrefabs.Count)];
+                }
+            }
+
+            if (prefabToSpawn == null) return;
+
+            float minX = ViewportManager.Instance.MinX + 0.6f;
+            float maxX = ViewportManager.Instance.MaxX - 0.6f;
+            float x = Random.Range(minX, maxX);
+            float y = ViewportManager.Instance.MaxY + 1.6f;
+
+            Instantiate(prefabToSpawn, new Vector3(x, y, 0f), Quaternion.identity);
+        }
+
         private IEnumerator BossEntranceSequence()
         {
             isWarningSequenceActive = true;
@@ -203,6 +246,7 @@ namespace ShooterGame.Wave
             minionSpawnTimer = 1.0f;
             eliteSpawnTimer = 10f;
             formationSpawnTimer = 3f;
+            asteroidSpawnTimer = 2.5f;
             hasTriggeredBossSequence = false;
             isWarningSequenceActive = false;
         }

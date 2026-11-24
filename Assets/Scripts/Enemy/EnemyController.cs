@@ -38,7 +38,15 @@ namespace ShooterGame.Enemy
 
         [Header("Drops & FX")]
         [SerializeField] private GameObject powerUpPrefab;
+        [SerializeField] private GameObject bombItemPrefab;
+        [SerializeField] private GameObject shieldItemPrefab;
+        [SerializeField] private float minionDropChance = 0.25f;
         [SerializeField] private GameObject explosionPrefab;
+
+        [Header("Boss Laser Cannon")]
+        [SerializeField] private BossLaserCannon laserCannon;
+        [SerializeField] private float laserInterval = 8.5f;
+        private float laserTimer = 4.0f;
 
         private SpriteRenderer spriteRenderer;
         private Color originalColor = Color.white;
@@ -78,6 +86,16 @@ namespace ShooterGame.Enemy
                     UIManager.Instance.SetBossHealth(1f);
                 }
                 targetHoverY = ViewportManager.Instance != null ? ViewportManager.Instance.MaxY - 3.2f : 4.8f;
+
+                if (laserCannon == null)
+                {
+                    laserCannon = GetComponent<BossLaserCannon>();
+                    if (laserCannon == null)
+                    {
+                        laserCannon = gameObject.AddComponent<BossLaserCannon>();
+                    }
+                }
+                laserTimer = 3.5f; // 進場 3.5 秒後釋放首次直線光束能量砲
             }
             else if (enemyType == EnemyType.Elite)
             {
@@ -152,6 +170,12 @@ namespace ShooterGame.Enemy
                 }
                 else
                 {
+                    // 若正在發射光束能量砲，暫停平移以鎖定射擊
+                    if (laserCannon != null && laserCannon.IsFiring)
+                    {
+                        return;
+                    }
+
                     hoverTimer += Time.deltaTime * 0.8f;
                     float minX = ViewportManager.Instance != null ? ViewportManager.Instance.MinX + 1.8f : -2.5f;
                     float maxX = ViewportManager.Instance != null ? ViewportManager.Instance.MaxX - 1.8f : 2.5f;
@@ -163,7 +187,29 @@ namespace ShooterGame.Enemy
 
         private void HandleShooting()
         {
-            if (!canShoot || EnemyBulletPool.Instance == null) return;
+            if (!canShoot) return;
+
+            // Boss 專屬光束能量砲邏輯
+            if (enemyType == EnemyType.Boss && hasArrivedAtTarget)
+            {
+                laserTimer -= Time.deltaTime;
+                if (laserTimer <= 0f && (laserCannon == null || !laserCannon.IsFiring))
+                {
+                    if (laserCannon != null)
+                    {
+                        laserCannon.FireLaser();
+                    }
+                    laserTimer = laserInterval;
+                }
+
+                // 光束射擊期間暫停常規散彈，凸顯主砲壓制震撼感
+                if (laserCannon != null && laserCannon.IsFiring)
+                {
+                    return;
+                }
+            }
+
+            if (EnemyBulletPool.Instance == null) return;
 
             shootTimer -= Time.deltaTime;
             if (shootTimer <= 0f)
@@ -304,10 +350,26 @@ namespace ShooterGame.Enemy
                 Instantiate(explosionPrefab, transform.position, Quaternion.identity);
             }
 
-            // 精英怪必定掉落 Power-Up 道具
-            if (enemyType == EnemyType.Elite && powerUpPrefab != null)
+            // 掉落道具系統：P 武器強化, B 炸彈, H 能量護盾
+            if (enemyType == EnemyType.Elite)
             {
-                Instantiate(powerUpPrefab, transform.position, Quaternion.identity);
+                // 精英怪 100% 掉落道具 (P 40%, B 30%, H 30%)
+                DropRandomItem(0.4f, 0.3f, 0.3f);
+            }
+            else if (enemyType == EnemyType.Minion)
+            {
+                // 雜兵 25% 機率掉落道具
+                if (Random.value < minionDropChance)
+                {
+                    DropRandomItem(0.4f, 0.3f, 0.3f);
+                }
+            }
+            else if (enemyType == EnemyType.Boss)
+            {
+                // Boss 擊破同時噴出全部 3 種獎勵
+                if (powerUpPrefab != null) Instantiate(powerUpPrefab, transform.position + Vector3.left * 1.0f, Quaternion.identity);
+                if (bombItemPrefab != null) Instantiate(bombItemPrefab, transform.position, Quaternion.identity);
+                if (shieldItemPrefab != null) Instantiate(shieldItemPrefab, transform.position + Vector3.right * 1.0f, Quaternion.identity);
             }
 
             // Boss 擊破演繹與 Victory 狀態觸發
@@ -320,11 +382,35 @@ namespace ShooterGame.Enemy
 
                 if (gm != null)
                 {
-                    gm.TriggerVictory();
+                    gm.StartVictorySequence();
                 }
             }
 
             SafelyDestroy();
+        }
+
+        private void DropRandomItem(float pChance, float bChance, float hChance)
+        {
+            float rand = Random.value;
+            GameObject prefabToDrop = powerUpPrefab;
+
+            if (rand < pChance)
+            {
+                prefabToDrop = powerUpPrefab;
+            }
+            else if (rand < pChance + bChance && bombItemPrefab != null)
+            {
+                prefabToDrop = bombItemPrefab;
+            }
+            else if (shieldItemPrefab != null)
+            {
+                prefabToDrop = shieldItemPrefab;
+            }
+
+            if (prefabToDrop != null)
+            {
+                Instantiate(prefabToDrop, transform.position, Quaternion.identity);
+            }
         }
 
         private void SafelyDestroy()

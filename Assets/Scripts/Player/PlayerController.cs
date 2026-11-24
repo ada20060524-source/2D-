@@ -22,6 +22,7 @@ namespace ShooterGame.Player
         [Header("Combat & Health")]
         [SerializeField] private int maxHp = 3;
         [SerializeField] private int currentHp = 3;
+        [SerializeField] private bool infiniteHp = false; // 正常模式：3/3 血量限制與死亡判定
         [SerializeField] private Transform firePoint;
         [SerializeField] private float fireRate = 0.14f;
         [SerializeField] private float invincibilityDuration = 1.5f;
@@ -29,7 +30,14 @@ namespace ShooterGame.Player
         [Header("Weapon & Bomb System")]
         [SerializeField] private int powerLevel = 1; // 1 ~ 4 階火力
         [SerializeField] private int bombCount = 2;   // 保命炸彈數
-        [SerializeField] private int maxBombCount = 3;
+        [SerializeField] private int maxBombCount = 5;
+
+        [Header("Shield System (H 護盾)")]
+        [SerializeField] private GameObject shieldVisual;
+        [SerializeField] private SpriteRenderer shieldSpriteRenderer;
+        private bool isShieldActive = false;
+        private int shieldHitsRemaining = 0;
+        private float shieldTimer = 0f;
 
         [Header("Hitbox References")]
         [SerializeField] private Collider2D coreHitboxCollider;
@@ -45,12 +53,28 @@ namespace ShooterGame.Player
 
         public int CurrentHP => currentHp;
         public int MaxHP => maxHp;
+        public bool InfiniteHP
+        {
+            get => infiniteHp;
+            set
+            {
+                infiniteHp = value;
+                UpdateAllUI();
+            }
+        }
         public int PowerLevel => powerLevel;
         public int BombCount => bombCount;
         public int MaxBombCount => maxBombCount;
+        public bool IsShieldActive => isShieldActive;
+        public int ShieldHitsRemaining => shieldHitsRemaining;
+        public float ShieldTimer => shieldTimer;
+        public GameObject ShieldVisual => shieldVisual;
         public bool IsInvulnerable => isInvulnerable;
+        public bool IsControlLocked => isControlLocked;
         public Collider2D CoreHitbox => coreHitboxCollider;
         public GameObject HitboxMarker => hitboxMarker;
+
+        private bool isControlLocked = false;
 
         private void Awake()
         {
@@ -71,15 +95,21 @@ namespace ShooterGame.Player
                 rb.useFullKinematicContacts = true;
             }
             gameObject.layer = GameLayers.Player;
+
+            // 確保遊戲一開始沒有護盾，必須拾取 H 道具後才啟用
+            DeactivateShield();
         }
 
         private void Start()
         {
+            DeactivateShield();
             UpdateAllUI();
         }
 
         private void Update()
         {
+            if (isControlLocked) return;
+
             var gm = GameManager.Instance;
             if (gm != null && (gm.CurrentState == GameState.Paused || gm.CurrentState == GameState.GameOver || gm.CurrentState == GameState.Victory))
             {
@@ -89,6 +119,32 @@ namespace ShooterGame.Player
             HandleMovement();
             HandleShooting();
             HandleBombInput();
+            UpdateShieldTimer();
+        }
+
+        private void UpdateShieldTimer()
+        {
+            if (isShieldActive)
+            {
+                shieldTimer -= Time.deltaTime;
+                if (shieldVisual != null)
+                {
+                    shieldVisual.transform.Rotate(0, 0, 75f * Time.deltaTime);
+                }
+
+                if (shieldTimer <= 0f)
+                {
+                    DeactivateShield();
+                }
+                else
+                {
+                    var ui = UIManager.Instance ?? Object.FindAnyObjectByType<UIManager>();
+                    if (ui != null)
+                    {
+                        ui.SetShield(true, shieldHitsRemaining, shieldTimer);
+                    }
+                }
+            }
         }
 
         private void HandleMovement()
@@ -246,6 +302,45 @@ namespace ShooterGame.Player
         }
 
         /// <summary>
+        /// 拾取補充保命炸彈
+        /// </summary>
+        public void CollectBomb()
+        {
+            bombCount = Mathf.Min(maxBombCount, bombCount + 1);
+            UpdateAllUI();
+        }
+
+        /// <summary>
+        /// 啟用能量保護罩（持續指定秒數或抵擋指定次數子彈）
+        /// </summary>
+        public void ActivateShield(float duration = 20f, int maxHits = 3)
+        {
+            isShieldActive = true;
+            shieldTimer = duration;
+            shieldHitsRemaining = maxHits;
+            if (shieldVisual != null)
+            {
+                shieldVisual.SetActive(true);
+            }
+            UpdateAllUI();
+        }
+
+        /// <summary>
+        /// 關閉能量保護罩
+        /// </summary>
+        public void DeactivateShield()
+        {
+            isShieldActive = false;
+            shieldTimer = 0f;
+            shieldHitsRemaining = 0;
+            if (shieldVisual != null)
+            {
+                shieldVisual.SetActive(false);
+            }
+            UpdateAllUI();
+        }
+
+        /// <summary>
         /// 施放保命炸彈：清除全螢幕敵彈並對全螢幕敵機造成巨額傷害
         /// </summary>
         public bool TriggerBomb()
@@ -298,13 +393,18 @@ namespace ShooterGame.Player
 
         private void OnTriggerEnter2D(Collider2D collision)
         {
+            // 敵彈已由 EnemyBullet.OnTriggerEnter2D 專責處理護盾吸收或受傷，避免重複觸發
+            if (collision.gameObject.layer == GameLayers.EnemyBullet)
+            {
+                return;
+            }
+
             if (isInvulnerable) return;
 
             bool isEnemyLayer = collision.gameObject.layer == GameLayers.Enemy;
-            bool isEnemyBulletLayer = collision.gameObject.layer == GameLayers.EnemyBullet;
             IDamageable damageable = collision.GetComponent<IDamageable>() ?? collision.GetComponentInParent<IDamageable>();
 
-            if (isEnemyLayer || isEnemyBulletLayer || damageable != null)
+            if (isEnemyLayer || damageable != null)
             {
                 TakeDamage(1);
 
@@ -317,7 +417,39 @@ namespace ShooterGame.Player
 
         public void TakeDamage(int damage)
         {
+            // 1. 護盾優先抵擋傷害（持續 20 秒或抵擋 3 發子彈/撞擊）
+            if (isShieldActive)
+            {
+                shieldHitsRemaining--;
+                // 護盾受擊光圈閃爍提示吸收，玩家機身無任何受傷反應（不閃爍、不扣血、不掉火力）
+                if (gameObject.activeInHierarchy)
+                {
+                    StartCoroutine(ShieldHitFlashRoutine());
+                }
+
+                if (shieldHitsRemaining <= 0)
+                {
+                    DeactivateShield();
+                }
+                else
+                {
+                    UpdateAllUI();
+                }
+                return; // 護盾抵擋一切傷害，機體完全不受損且無受傷反應
+            }
+
             if (isInvulnerable) return;
+
+            // 測試模式：無限 HP 免疫扣血與致死，但觸發短暫無敵閃爍以確認受擊判定
+            if (infiniteHp)
+            {
+                UpdateAllUI();
+                if (gameObject.activeInHierarchy)
+                {
+                    StartCoroutine(InvincibilityRoutine());
+                }
+                return;
+            }
 
             currentHp = Mathf.Max(0, currentHp - damage);
 
@@ -372,6 +504,19 @@ namespace ShooterGame.Player
             isInvulnerable = false;
         }
 
+        private IEnumerator ShieldHitFlashRoutine()
+        {
+            if (shieldSpriteRenderer != null)
+            {
+                shieldSpriteRenderer.color = new Color(1f, 1f, 1f, 0.95f);
+            }
+            yield return new WaitForSeconds(0.08f);
+            if (shieldSpriteRenderer != null)
+            {
+                shieldSpriteRenderer.color = new Color(0.2f, 0.9f, 1f, 0.75f);
+            }
+        }
+
         private void Die()
         {
             var gm = GameManager.Instance ?? Object.FindAnyObjectByType<GameManager>();
@@ -381,23 +526,57 @@ namespace ShooterGame.Player
             }
         }
 
+        /// <summary>
+        /// 關卡勝利時鎖定操作，進入自動返航停靠母艦狀態
+        /// </summary>
+        public void LockControlsForDocking()
+        {
+            isControlLocked = true;
+            isInvulnerable = true;
+            simulatedInput = Vector2.zero;
+            isSimulatedFiring = false;
+            DeactivateShield();
+        }
+
+        public void UnlockControls()
+        {
+            isControlLocked = false;
+            isInvulnerable = false;
+        }
+
         public void ResetPlayer()
         {
+            UnlockControls();
             currentHp = maxHp;
             powerLevel = 1;
             bombCount = 2;
             isInvulnerable = false;
-            if (spriteRenderer != null) spriteRenderer.color = Color.white;
+            DeactivateShield();
+            transform.localScale = new Vector3(0.45f, 0.45f, 1f);
+            if (spriteRenderer != null)
+            {
+                spriteRenderer.color = Color.white;
+                spriteRenderer.enabled = true;
+            }
             UpdateAllUI();
         }
 
         public void UpdateAllUI()
         {
-            if (UIManager.Instance != null)
+            var ui = UIManager.Instance ?? Object.FindAnyObjectByType<UIManager>();
+            if (ui != null)
             {
-                UIManager.Instance.SetHP(currentHp, maxHp);
-                UIManager.Instance.SetPowerLevel(powerLevel);
-                UIManager.Instance.SetBombCount(bombCount);
+                if (infiniteHp)
+                {
+                    ui.SetHPInfinite();
+                }
+                else
+                {
+                    ui.SetHP(currentHp, maxHp);
+                }
+                ui.SetPowerLevel(powerLevel);
+                ui.SetBombCount(bombCount);
+                ui.SetShield(isShieldActive, shieldHitsRemaining, shieldTimer);
             }
         }
 

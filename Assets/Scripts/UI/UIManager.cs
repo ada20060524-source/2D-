@@ -31,10 +31,11 @@ namespace ShooterGame.UI
         [SerializeField] private RectTransform centerContainer;
         [SerializeField] private TextMeshProUGUI warningBanner;
 
-        [Header("=== 5. Bottom-Left Zone (保命炸彈 / 火力等級) ===")]
+        [Header("=== 5. Bottom-Left Zone (保命炸彈 / 火力等級 / 護盾狀態) ===")]
         [SerializeField] private RectTransform bottomLeftContainer;
         [SerializeField] private TextMeshProUGUI bombText;
         [SerializeField] private TextMeshProUGUI powerText;
+        [SerializeField] private TextMeshProUGUI shieldText;
 
         [Header("=== 6. Overlay Zone (暫停 / 結算面板) ===")]
         [SerializeField] private RectTransform overlayContainer;
@@ -56,6 +57,7 @@ namespace ShooterGame.UI
         public GameObject GameOverPanel => gameOverPanel;
         public GameObject VictoryPanel => victoryPanel;
         public TextMeshProUGUI WarningBanner => warningBanner;
+        public TextMeshProUGUI ShieldText => shieldText;
 
         private void Awake()
         {
@@ -91,7 +93,22 @@ namespace ShooterGame.UI
         {
             if (hpText != null)
             {
-                hpText.text = $"HP: {currentHp}/{maxHp}";
+                if (currentHp >= 999 || maxHp >= 999)
+                {
+                    hpText.text = "HP: ∞";
+                }
+                else
+                {
+                    hpText.text = $"HP: {currentHp}/{maxHp}";
+                }
+            }
+        }
+
+        public void SetHPInfinite()
+        {
+            if (hpText != null)
+            {
+                hpText.text = "HP: ∞";
             }
         }
 
@@ -182,6 +199,22 @@ namespace ShooterGame.UI
             if (bombText != null)
             {
                 bombText.text = $"BOMB: {count}";
+            }
+        }
+
+        public void SetShield(bool active, int hitsRemaining, float timeLeft)
+        {
+            if (shieldText != null)
+            {
+                if (active)
+                {
+                    shieldText.gameObject.SetActive(true);
+                    shieldText.text = $"SHIELD: {hitsRemaining} ({Mathf.CeilToInt(timeLeft)}s)";
+                }
+                else
+                {
+                    shieldText.gameObject.SetActive(false);
+                }
             }
         }
 

@@ -153,4 +153,7 @@ MonoBehaviour:
   bulletSpeed: 5.8
   firePoint: {fileID: 0}
   powerUpPrefab: {fileID: 5870302199566501779, guid: 2117c4d8fc8212f45bf9e34518b0e82e, type: 3}
+  bombItemPrefab: {fileID: 7384379813809698556, guid: c5404408082501c4fb1316166459b4a8, type: 3}
+  shieldItemPrefab: {fileID: 6701695962635864934, guid: c9b811083099ba145834168112351ec5, type: 3}
+  minionDropChance: 0.25
   explosionPrefab: {fileID: 100002, guid: cafecd3fc3b761c45bb1553f35cf5c96, type: 3}
