@@ -83,6 +83,11 @@ namespace ShooterGame.Item
                     }
                 }
 
+                if (AudioManager.Instance != null)
+                {
+                    AudioManager.Instance.PlayPowerUp();
+                }
+
                 var gm = GameManager.Instance ?? Object.FindAnyObjectByType<GameManager>();
                 if (gm != null)
                 {

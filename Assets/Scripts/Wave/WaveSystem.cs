@@ -28,6 +28,11 @@ namespace ShooterGame.Wave
         [SerializeField] private float timeline = 0f;
         [SerializeField] private bool autoAdvance = true;
 
+        [Header("Custom Wave Config (JSON 驅動)")]
+        [SerializeField] private bool useCustomConfig = false;
+        private WaveConfigData currentConfig;
+        private int nextEventIndex = 0;
+
         private float minionSpawnTimer = 0f;
         private float eliteSpawnTimer = 0f;
         private float formationSpawnTimer = 0f;
@@ -69,6 +74,12 @@ namespace ShooterGame.Wave
 
         public void ProcessTimeline()
         {
+            if (useCustomConfig && currentConfig != null)
+            {
+                ProcessCustomTimeline();
+                return;
+            }
+
             // 隕石障礙物週期性生成（貫穿全場，為戰鬥提供天然掩體與得分機會）
             asteroidSpawnTimer -= Time.deltaTime;
             if (asteroidSpawnTimer <= 0f)
@@ -216,6 +227,12 @@ namespace ShooterGame.Wave
                 UIManager.Instance.ShowWarning(true);
             }
 
+            // 播放警告警報音效
+            if (AudioManager.Instance != null)
+            {
+                AudioManager.Instance.PlayWarningSiren();
+            }
+
             yield return new WaitForSeconds(2.5f);
 
             // 3. 關閉 WARNING 標誌
@@ -236,6 +253,12 @@ namespace ShooterGame.Wave
                 Instantiate(bossPrefab, new Vector3(0f, spawnY, 0f), Quaternion.Euler(0, 0, 180));
             }
 
+            // Boss 戰切換至激昂熱血戰鬥音樂
+            if (AudioManager.Instance != null)
+            {
+                AudioManager.Instance.PlayBossBgm();
+            }
+
             isWarningSequenceActive = false;
         }
 
@@ -243,12 +266,94 @@ namespace ShooterGame.Wave
         {
             StopAllCoroutines();
             timeline = 0f;
+            nextEventIndex = 0;
             minionSpawnTimer = 1.0f;
             eliteSpawnTimer = 10f;
             formationSpawnTimer = 3f;
             asteroidSpawnTimer = 2.5f;
             hasTriggeredBossSequence = false;
             isWarningSequenceActive = false;
+        }
+
+        public bool ApplyCustomWaveConfig(string json)
+        {
+            var config = WaveConfigUtility.ImportFromJson(json);
+            if (config != null)
+            {
+                currentConfig = config;
+                useCustomConfig = true;
+                // 按時間排序事件
+                currentConfig.events.Sort((a, b) => a.time.CompareTo(b.time));
+                RestartTimeline();
+                Debug.Log($"[WaveSystem] Loaded custom wave: {config.waveName} with {config.events.Count} events.");
+                return true;
+            }
+            return false;
+        }
+
+        public void ResetToDefaultWaveConfig()
+        {
+            useCustomConfig = false;
+            currentConfig = null;
+            RestartTimeline();
+        }
+
+        private void ProcessCustomTimeline()
+        {
+            // 隕石障礙物
+            asteroidSpawnTimer -= Time.deltaTime;
+            if (asteroidSpawnTimer <= 0f)
+            {
+                SpawnAsteroid();
+                asteroidSpawnTimer = currentConfig.asteroidInterval > 0f ? currentConfig.asteroidInterval : 6f;
+            }
+
+            // 依時間順序觸發事件
+            while (nextEventIndex < currentConfig.events.Count && timeline >= currentConfig.events[nextEventIndex].time)
+            {
+                var evt = currentConfig.events[nextEventIndex];
+                TriggerWaveEvent(evt);
+                nextEventIndex++;
+            }
+
+            // Boss 觸發判定
+            if (timeline >= currentConfig.bossSpawnTime && !hasTriggeredBossSequence)
+            {
+                hasTriggeredBossSequence = true;
+                StartCoroutine(BossEntranceSequence());
+            }
+        }
+
+        private void TriggerWaveEvent(WaveEventData evt)
+        {
+            if (evt == null) return;
+            float? targetX = (evt.posX != 0f) ? evt.posX : (float?)null;
+
+            for (int i = 0; i < Mathf.Max(1, evt.count); i++)
+            {
+                switch (evt.eventType)
+                {
+                    case "Minion":
+                        SpawnMinion(targetX);
+                        break;
+                    case "Elite":
+                        SpawnElite();
+                        break;
+                    case "Formation":
+                        SpawnMinionFormation();
+                        break;
+                    case "Asteroid":
+                        SpawnAsteroid();
+                        break;
+                    case "Boss":
+                        if (!hasTriggeredBossSequence)
+                        {
+                            hasTriggeredBossSequence = true;
+                            StartCoroutine(BossEntranceSequence());
+                        }
+                        break;
+                }
+            }
         }
 
         /// <summary>

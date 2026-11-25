@@ -25,6 +25,7 @@ namespace ShooterGame.UI
         [Header("=== 3. Top-Right Zone (得分 / 暫停按鈕) ===")]
         [SerializeField] private RectTransform topRightContainer;
         [SerializeField] private TextMeshProUGUI scoreText;
+        [SerializeField] private TextMeshProUGUI highScoreText;
         [SerializeField] private Button pauseButton;
 
         [Header("=== 4. Center Zone (動態 Warning / 關卡橫幅) ===")]
@@ -77,8 +78,10 @@ namespace ShooterGame.UI
             if (gameOverPanel != null) gameOverPanel.SetActive(false);
             if (victoryPanel != null) victoryPanel.SetActive(false);
 
+            // 綁定暫停按鈕
             if (pauseButton != null)
             {
+                pauseButton.onClick.RemoveAllListeners();
                 pauseButton.onClick.AddListener(() =>
                 {
                     if (GameManager.Instance != null)
@@ -87,20 +90,61 @@ namespace ShooterGame.UI
                     }
                 });
             }
+
+            // 自動尋找並綁定 GameOver 面板下的所有按鈕（如 Retry / Restart）
+            if (gameOverPanel != null)
+            {
+                var buttons = gameOverPanel.GetComponentsInChildren<Button>(true);
+                foreach (var btn in buttons)
+                {
+                    if (btn != null)
+                    {
+                        btn.onClick.RemoveAllListeners();
+                        btn.onClick.AddListener(OnRestartClicked);
+                    }
+                }
+            }
+
+            // 自動尋找並綁定 Victory 面板下的所有按鈕（如 Replay / Play Again / Restart）
+            if (victoryPanel != null)
+            {
+                var buttons = victoryPanel.GetComponentsInChildren<Button>(true);
+                foreach (var btn in buttons)
+                {
+                    if (btn != null)
+                    {
+                        btn.onClick.RemoveAllListeners();
+                        btn.onClick.AddListener(OnRestartClicked);
+                    }
+                }
+            }
+
+            // 自動尋找並綁定 Pause 面板下的 Resume 與 Restart 按鈕
+            if (pausePanel != null)
+            {
+                var buttons = pausePanel.GetComponentsInChildren<Button>(true);
+                foreach (var btn in buttons)
+                {
+                    if (btn == null) continue;
+                    if (btn.gameObject.name.ToLower().Contains("resume"))
+                    {
+                        btn.onClick.RemoveAllListeners();
+                        btn.onClick.AddListener(OnResumeClicked);
+                    }
+                    else if (btn.gameObject.name.ToLower().Contains("restart") || btn.gameObject.name.ToLower().Contains("retry"))
+                    {
+                        btn.onClick.RemoveAllListeners();
+                        btn.onClick.AddListener(OnRestartClicked);
+                    }
+                }
+            }
         }
 
         public void SetHP(int currentHp, int maxHp)
         {
             if (hpText != null)
             {
-                if (currentHp >= 999 || maxHp >= 999)
-                {
-                    hpText.text = "HP: ∞";
-                }
-                else
-                {
-                    hpText.text = $"HP: {currentHp}/{maxHp}";
-                }
+                hpText.text = $"HP: {currentHp}/{maxHp}";
             }
         }
 
@@ -108,7 +152,7 @@ namespace ShooterGame.UI
         {
             if (hpText != null)
             {
-                hpText.text = "HP: ∞";
+                hpText.text = "HP: 3/3";
             }
         }
 
@@ -122,6 +166,10 @@ namespace ShooterGame.UI
 
         public void SetHighScore(int highScore)
         {
+            if (highScoreText != null)
+            {
+                highScoreText.text = $"HI: {highScore}";
+            }
         }
 
         public void SetBossHealth(float ratio)
@@ -273,6 +321,42 @@ namespace ShooterGame.UI
             {
                 GameManager.Instance.RestartGame();
             }
+        }
+
+        /// <summary>
+        /// 匯出玩家存檔為 JSON 字串
+        /// </summary>
+        public string ExportSaveData()
+        {
+            string json = DataPersistenceManager.ExportToJson();
+            Debug.Log($"[UIManager] Save Data Exported:\n{json}");
+            return json;
+        }
+
+        /// <summary>
+        /// 匯入玩家存檔 JSON 字串
+        /// </summary>
+        public bool ImportSaveData(string json)
+        {
+            bool success = DataPersistenceManager.ImportFromJson(json);
+            if (success && GameManager.Instance != null)
+            {
+                int high = DataPersistenceManager.CurrentData.highScore;
+                SetHighScore(high);
+            }
+            return success;
+        }
+
+        /// <summary>
+        /// 匯入自訂關卡排程 JSON 字串
+        /// </summary>
+        public bool ImportWaveConfig(string json)
+        {
+            if (Wave.WaveSystem.Instance != null)
+            {
+                return Wave.WaveSystem.Instance.ApplyCustomWaveConfig(json);
+            }
+            return false;
         }
     }
 }

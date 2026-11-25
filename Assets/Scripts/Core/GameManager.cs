@@ -41,12 +41,28 @@ namespace ShooterGame.Core
                 return;
             }
             Instance = this;
+
+            // 確保 AudioManager 存在
+            if (AudioManager.Instance == null && Object.FindAnyObjectByType<AudioManager>() == null)
+            {
+                var audioGo = new GameObject("AudioManager");
+                audioGo.AddComponent<AudioManager>();
+            }
+
+            // 載入持久化數據
+            DataPersistenceManager.LoadData();
+            highScore = DataPersistenceManager.CurrentData.highScore;
         }
 
         private void Start()
         {
             SetState(GameState.Playing);
             UpdateUI();
+
+            if (AudioManager.Instance != null)
+            {
+                AudioManager.Instance.PlayNormalBgm();
+            }
         }
 
         private void Update()
@@ -98,6 +114,12 @@ namespace ShooterGame.Core
 
                 case GameState.GameOver:
                     Time.timeScale = 0.3f; // 慢動作感受死亡回饋，隨後彈出面板
+                    DataPersistenceManager.UpdateScoreAndKills(currentScore, totalKills);
+                    if (AudioManager.Instance != null)
+                    {
+                        AudioManager.Instance.StopBgm();
+                        AudioManager.Instance.PlayFail();
+                    }
                     if (UIManager.Instance != null)
                     {
                         UIManager.Instance.ShowGameOverPanel(true);
@@ -107,6 +129,12 @@ namespace ShooterGame.Core
 
                 case GameState.Victory:
                     Time.timeScale = 0.5f;
+                    DataPersistenceManager.UpdateScoreAndKills(currentScore, totalKills);
+                    if (AudioManager.Instance != null)
+                    {
+                        AudioManager.Instance.StopBgm();
+                        AudioManager.Instance.PlayPass();
+                    }
                     if (UIManager.Instance != null)
                     {
                         UIManager.Instance.ShowVictoryPanel(true);
@@ -127,6 +155,7 @@ namespace ShooterGame.Core
             if (UIManager.Instance != null)
             {
                 UIManager.Instance.SetScore(currentScore);
+                UIManager.Instance.SetHighScore(highScore);
             }
         }
 
@@ -358,6 +387,12 @@ namespace ShooterGame.Core
                 UIManager.Instance.ShowGameOverPanel(false);
                 UIManager.Instance.ShowVictoryPanel(false);
                 UIManager.Instance.SetScore(currentScore);
+            }
+
+            // 7. 重置背景音樂為常規戰鬥曲
+            if (AudioManager.Instance != null)
+            {
+                AudioManager.Instance.PlayNormalBgm();
             }
 
             SetState(GameState.Playing);

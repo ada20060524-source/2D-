@@ -336,6 +336,11 @@ namespace ShooterGame.Enemy
             if (isDead) return;
             isDead = true;
 
+            if (AudioManager.Instance != null)
+            {
+                AudioManager.Instance.PlayExplosion();
+            }
+
             // 擊毀獎勵分數
             var gm = GameManager.Instance ?? Object.FindAnyObjectByType<GameManager>();
             if (gm != null)

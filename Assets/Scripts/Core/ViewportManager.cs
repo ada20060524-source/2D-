@@ -60,6 +60,7 @@ namespace ShooterGame.Core
 
         /// <summary>
         /// 計算 9:16 核心世界座標安全邊界，攝影機強制全螢幕 Solid Color 清除
+        /// 並且在寬螢幕下以黑邊柱狀條 (Pillarboxing) 自適應正交視角，維持 9:16 內容置中
         /// </summary>
         public void UpdateViewport()
         {
@@ -68,9 +69,28 @@ namespace ShooterGame.Core
                 targetCamera = GetComponent<Camera>();
             }
 
-            // 確保攝影機 Rect 始終為 (0, 0, 1, 1)，絕不縮成黑邊導致未清除像素疊影
-            targetCamera.rect = new Rect(0f, 0f, 1f, 1f);
+            // 確保攝影機清除背景色
             targetCamera.clearFlags = CameraClearFlags.SolidColor;
+
+            // 計算目前螢幕比例
+            float screenAspect = (float)Screen.width / Mathf.Max(1, Screen.height);
+            targetAspect = targetAspectWidth / targetAspectHeight;
+
+            // 自適應居中縮放與黑邊（Letterboxing / Pillarboxing）處理
+            if (screenAspect > targetAspect)
+            {
+                // 當前螢幕比 9:16 更寬（例如 16:9 桌機）：左右留黑邊 (Pillarbox)，中央為 9:16
+                float insetWidth = targetAspect / screenAspect;
+                float insetX = (1.0f - insetWidth) * 0.5f;
+                targetCamera.rect = new Rect(insetX, 0f, insetWidth, 1.0f);
+            }
+            else
+            {
+                // 當前螢幕比 9:16 更窄（例如長條手機）：上下留黑邊 (Letterbox)
+                float insetHeight = screenAspect / targetAspect;
+                float insetY = (1.0f - insetHeight) * 0.5f;
+                targetCamera.rect = new Rect(0f, insetY, 1.0f, insetHeight);
+            }
 
             // 以 9:16 固定基準計算核心安全視口大小
             float vertExtent = targetCamera.orthographicSize;

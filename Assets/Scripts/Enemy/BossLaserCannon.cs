@@ -121,6 +121,11 @@ namespace ShooterGame.Enemy
             elapsed = 0f;
             float damageTimer = 0f;
 
+            if (AudioManager.Instance != null)
+            {
+                AudioManager.Instance.PlayBossLaser();
+            }
+
             lineRenderer.startWidth = beamWidth;
             lineRenderer.endWidth = beamWidth;
             lineRenderer.startColor = beamColor;

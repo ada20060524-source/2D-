@@ -89,6 +89,11 @@ namespace ShooterGame.Enemy
 
         private void Die()
         {
+            if (AudioManager.Instance != null)
+            {
+                AudioManager.Instance.PlayExplosion();
+            }
+
             var gm = GameManager.Instance ?? Object.FindAnyObjectByType<GameManager>();
             if (gm != null)
             {

@@ -226,6 +226,10 @@ namespace ShooterGame.Player
             if (isFiring && fireTimer <= 0f)
             {
                 FireBullet();
+                if (AudioManager.Instance != null)
+                {
+                    AudioManager.Instance.PlayLaser();
+                }
                 fireTimer = fireRate;
             }
         }
@@ -453,6 +457,14 @@ namespace ShooterGame.Player
 
             currentHp = Mathf.Max(0, currentHp - damage);
 
+            if (AudioManager.Instance != null)
+            {
+                if (currentHp > 0)
+                {
+                    AudioManager.Instance.PlayPlayerHurt();
+                }
+            }
+
             // 受擊稍微降低火力（若高於1級）
             if (powerLevel > 1)
             {
@@ -519,6 +531,11 @@ namespace ShooterGame.Player
 
         private void Die()
         {
+            if (AudioManager.Instance != null)
+            {
+                AudioManager.Instance.PlayPlayerDeath();
+            }
+
             var gm = GameManager.Instance ?? Object.FindAnyObjectByType<GameManager>();
             if (gm != null)
             {
